@@ -1,0 +1,433 @@
+---
+title: "Analiza współczynnika samobójstw na świecie w latach 1985-2016"
+author: "Michał Krajewski"
+date: "2023-01-27"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+# Wprowadzenie 
+Praca ma charakter eksploracyjny, ma za zadanie prześledzić tendencje i przyczyny samobójstw
+Na początku przeprowadzona zostanie globalna analiza samobóstw, jak zmieniała się ta liczba w latach 1985-2016. Kolejno jak sytuacja wygląda na kontynentach czy poszczególnych krajach. Następnie zaobserwowany zostanie związek płci z samójstwami, a także wieku i odpowiedź na pytanie: które pokolenie najczęsciej popełnia samobójstwo. Pod koniec przeanalizujemy także korelacje miedzy wskaźnikami takimi jak HDI i PKB a współczynnikiem samobójstw.
+```{r pakiety, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(countrycode)
+library(plotly)
+library(DT)
+library(kernlab)
+library(pracma)
+library(reshape2)
+library(tidymodels)
+```
+
+## Struktura Danych
+
+```{r wczytanie danych, echo = FALSE }
+dane <- read.csv2("/Users/michalek/Downloads/master.csv",header = TRUE,sep = ",", dec ="." )
+dane2 <-dane %>%
+  mutate(continent = countrycode(sourcevar = country,origin = "country.name",destination = "continent"))
+sample_dane <-sample_n(dane2, 10, replace = TRUE)
+
+datatable( sample_dane)
+```
+
+# Ogólne tendencje
+
+## samobójstwa a rok
+Zobaczmy jak zmieniała się całkowita liczba samobójstw w latach 1985-2016
+
+```{r global, echo=FALSE, message=FALSE, warning=FALSE}
+timewise <- dane %>%
+  filter(year<=2010) %>%
+  select(year,suicides_no) %>%
+  group_by(year) %>%
+  summarise(total_suicides = sum(suicides_no),year = year)
+
+ggplot(timewise,
+       aes(x = year,y = total_suicides))+
+    geom_line() + names("łączna liczba samobójstw ") + xlab("rok") +ylab("liczba samobójstw")
+```
+
+Zauważmy **gwałtowny wzrost** liczby samobójstw pod koniec lat 80'
+
+## kontynenty
+Spójrzmy jak wygląda wsp_samobójstw na poszczególnych kontynentach 
+```{r kontynenty, echo=FALSE, message=FALSE, warning=FALSE}
+timewise2 <- dane2 %>%
+  filter(!is.na(suicides.100k.pop)) %>%
+  select(year,suicides.100k.pop, continent) %>%
+  group_by(year,continent) %>%
+  summarise(avg_suicides = mean(suicides.100k.pop)/10^5,year = year,continent = continent)
+
+ggplot(data = timewise2,
+       aes(x = year , y = avg_suicides))+ geom_line(aes(colour=continent))
+```
+Jak widać zdecydowanie od lat 90' przoduje **Europa** natomiast najniższy współczynnik samobójstw obserwujemy w Afryce
+
+## samobójstwa na 100 tyś osób w 2010 
+Przyjrzymy się liczbie samobójstw w poszczególnych krajach w roku 2010 
+```{r message=FALSE, warning=FALSE, include=FALSE}
+map.world <- map_data("world")
+ 
+
+xd<- dane2%>% filter(grepl("States",country, fixed = TRUE))
+
+dane_mapa <- dane2 %>%
+  filter(year == 2010) %>%
+  group_by(country) %>%
+  summarise(suicides = mean(suicides.100k.pop))
+names(dane_mapa)[names(dane_mapa)=="country"] <- "region"
+map.world <- left_join(map.world , dane_mapa, by="region")
+map.world %>% filter(!is.na(map.world$suicides))
+```
+
+```{r}
+mapa1 <- ggplot(data = map.world, aes(x=long, y = lat, group = group)) +
+  geom_polygon(aes(fill=suicides),color = "black") +
+  theme(axis.text.x=element_blank(), 
+        axis.ticks.x=element_blank(), 
+        axis.text.y=element_blank(),  
+        axis.ticks.y=element_blank()  
+        ) +xlab(element_blank()) +
+  ylab(element_blank()) 
+
+mapa1
+```
+
+## kraje z najwyższym współczynnikiem w 2010 roku 
+```{r}
+najwięcej_s_2010<- dane_mapa %>%
+  mutate(suicides = round(suicides, digits = 2)) %>%
+  arrange(desc(suicides)) %>% 
+  top_n(8,suicides)
+datatable(najwięcej_s_2010)
+```
+Jak widać te 8 krajów z największym współczynnikiem to głównie **Europa**(4 z nich) i Azja (3 z nich)
+
+# Czynniki samobójstw
+
+Przyjrzyjmy się które czynniki są najbardziej istotne 
+
+## Płeć
+```{r include=FALSE}
+wgplci <- dane %>%
+  select(sex, year, suicides.100k.pop)%>%
+  group_by(year,sex) %>%
+    summarise(avg_suicides = mean(suicides.100k.pop)/10^5,year = year, sex = sex) %>%
+  ungroup()
+```
+```{r}
+ggplot(data = wgplci,aes(x = year, y = avg_suicides,ylim(0,0.0003)))+geom_line(aes(color = sex)) 
+
+```
+Obserwowany jest około **3** krotnie wyższy współczynnik w przypadku **mężczyżn** 
+
+Teraz spójrzmy na strukturę procentową łacznej liczby samobójstw względem płci 
+```{r płeć wykres, include=FALSE}
+wg_plci2 <- dane %>%
+  select(sex, suicides_no) %>%
+  group_by(sex) %>%
+  summarise( sum_suicides = sum(suicides_no))
+
+
+ile_razy_m_niz_k <- round(wg_plci2$sum_suicides[2]/wg_plci2$sum_suicides[1])
+fig <- plot_ly(wg_plci2, labels = ~c("female","male"), values = ~wg_plci2$sum_suicides, type = 'pie')
+fig <- fig %>% layout(
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+  
+```
+
+```{r wykres kołowy k_m}
+  
+fig
+```
+Mężczyżn samobójców było 3 razy tyle ile kobiet 
+
+## wiek 
+```{r wykr wiek, include=FALSE}
+dane_wiek <- dane2 %>%
+  select (year,age,suicides.100k.pop) %>%
+  filter(!is.na(suicides.100k.pop)) %>%
+  group_by(age,year)%>%
+  summarize(wskaźnik = mean(suicides.100k.pop))
+glimpse(dane_wiek)
+fig_age <- plot_ly(dane_wiek, x= ~year, y = ~wskaźnik, type = 'scatter', mode = 'lines', color = ~age) 
+fig_age <- fig_age %>% layout(title = 'wiek osób popełniających saobójstwo',
+         xaxis = list(title = 'rok'),
+         yaxis = list (title ='współczynnik samobójstw na 100tyś osób'))
+```
+```{r}
+
+fig_age
+```
+Wyraźnie **częścięj** samobójstwo popełniają osoby **starsze**
+
+Sprawdźmy w jakim wieku były osoby odbierające sobie życie w 2016 
+```{r include=FALSE}
+dane_wiek_2016 <- dane_wiek %>%
+  filter(year == 2016)
+glimpse(dane_wiek_2016)
+fig_wiek <- plot_ly(dane_wiek_2016, labels = ~dane_wiek_2016$age, values = ~dane_wiek_2016$wskaźnik, type = 'pie')
+fig_wiek <- fig_wiek %>% layout(title = 'Udział we wskaźniku samobójstw ze względu na wiek',
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+```
+```{r}
+fig_wiek
+```
+
+## pokolenie
+Które z pokoleń ma największe skłonności samobójcze
+```{r include=FALSE}
+generacje_dane<- dane2 %>% 
+  select(year, suicides.100k.pop, generation) %>%
+  filter(!is.na(suicides.100k.pop)) %>%
+  group_by(year,generation) %>%
+  summarise(wskaźnik = mean(suicides.100k.pop))%>%
+  ungroup()
+glimpse(generacje_dane)
+fig_gen <- plot_ly(generacje_dane, x = ~year, y = ~wskaźnik, type = 'scatter', mode = 'lines', color = ~generation)
+fig_gen <- fig_gen %>% layout(title = 'pokolenie',
+         xaxis = list(title = 'rok'),
+         yaxis = list (title ='współczynnik samobójstw na 100tyś osób')) 
+```
+ 
+```{r}
+fig_gen
+```
+Zauważalnie wysoko jest **pokolenie powojenne**
+
+## PKB
+
+Wróćmy do 8 krajów z najwyższym współczynnikiem samobójstw przyjrzyjmy się czy liczba samobójstw jest skolerowana z wartością PKB percap w danych kraju 
+```{r include=FALSE}
+dane_kr_najw <- dane2 %>%
+  group_by(country) %>%
+  filter(year==2010) %>%
+  summarise(gdp = mean(gdp_per_capita....),s_ratio = mean(suicides.100k.pop)) %>%
+  arrange(desc(s_ratio)) %>%
+  slice(1:8) %>%
+  ungroup()
+y <- dane_kr_najw$country
+x_s <-dane_kr_najw$s_ratio
+x_n <-dane_kr_najw$gdp
+data <- dane_kr_najw
+```
+``` {r}
+fig1 <- plot_ly(x = ~x_s, y = ~reorder(y, x_s), name = 'Liczba samobójstw na 100 tyś mieszkańców',
+              type = 'bar', orientation = 'h',
+              marker = list(color = 'rgba(50, 171, 96, 0.6)',
+                            line = list(color = 'rgba(50, 171, 96, 1.0)', width = 1))) 
+fig1 <- fig1 %>% layout(yaxis = list(showgrid = FALSE, showline = FALSE, showticklabels = TRUE, domain= c(0, 0.85)),
+         xaxis = list(zeroline = FALSE, showline = FALSE, showticklabels = TRUE, showgrid = TRUE)) 
+fig1 <- fig1 %>% add_annotations(xref = 'x1', yref = 'y',
+                  x = x_s,  y = y,
+                  text = paste(round(x_s, 2), '/100k'),
+                  font = list(family = 'Arial', size = 12, color = 'rgb(50, 171, 96)'),
+                  showarrow = FALSE)
+
+fig2 <- plot_ly(x = ~x_n, y = ~reorder(y, x_s), name = 'Wartość PKB per capita brutto USD/capita',
+              type = 'scatter', mode = 'lines+markers',
+              line = list(color = 'rgb(128, 0, 128)')) 
+fig2 <- fig2 %>% layout(yaxis = list(showgrid = FALSE, showline = TRUE, showticklabels = FALSE,
+                       linecolor = 'rgba(102, 102, 102, 0.8)', linewidth = 2,
+                       domain = c(0, 0.85)),
+         xaxis = list(zeroline = FALSE, showline = FALSE, showticklabels = TRUE, showgrid = TRUE,
+                       side = 'top', dtick = 25000)) %>% 
+  add_annotations(xref = 'x2', yref = 'y',
+                  x = x_n, y = y,
+                  text = paste(x_n, "USD"),
+                  font = list(family = 'Arial', size = 12, color = 'rgb(128, 0, 128)'),
+                  showarrow = FALSE)
+
+fig <- subplot(fig1, fig2) 
+fig <- fig %>% layout(title = 'Wartość PKB per capita USD/capita',
+         legend = list(x = 0.029, y = 1.038,
+                       font = list(size = 10)),
+         margin = list(l = 100, r = 20, t = 70, b = 70),
+         paper_bgcolor = 'rgb(248, 248, 255)',
+         plot_bgcolor = 'rgb(248, 248, 255)')
+fig <- fig %>% add_annotations(xref = 'paper', yref = 'paper',
+                  x = -0.14, y = -0.15,
+                  text = paste('Dane z 2010 roku'),
+                  font = list(family = 'Arial', size = 10, color = 'rgb(150,150,150)'),
+                  showarrow = FALSE)
+```
+```{r}
+fig
+```
+
+Zobaczmy jak wyglądał wsp_samobójstw w tych krajach na przestrzeni lat
+```{r include=FALSE}
+pkb_rok_krnajw <- dane2 %>%
+  filter(country %in% c(y,c("Ukraine","Estonia","Latvia"))) %>%
+  select(year,suicides.100k.pop, gdp_per_capita...., country) %>%
+  group_by(country,year) %>%
+  summarise( suicides = mean(suicides.100k.pop), gdp= mean(gdp_per_capita....)) %>%
+  ungroup()
+  
+
+
+```
+
+```{r message=FALSE, warning=FALSE}
+fig_najw_pkb <- plot_ly(pkb_rok_krnajw, x = ~year, y = ~gdp, type = 'scatter', mode = 'lines', color = ~country )
+fig_najw <- fig_najw_pkb %>% layout(title = 'kraje z nawjyższym współczynnikiem samobójstw',
+         xaxis = list(title = 'rok'),
+         yaxis = list (title ='PKB percap')) 
+
+fig_najw_pkb
+```
+
+Widać wzrost pkb w tych krajach od lat 90'
+
+Nasuwa się wniosek że liczba samobójstw jest skorelowana z pkb
+```{r message=FALSE, warning=FALSE, include=FALSE}
+fig_cor1 <- plot_ly(
+  pkb_rok_krnajw, x = ~gdp, y = ~suicides,
+  color = ~country, size= ~year
+)
+
+
+```
+
+```{r message=FALSE, warning=FALSE}
+fig_cor1
+```
+Wygląda jakby te zmienne były skorelowane, policzmy zatem korelacje dla poszczególnych krajów 
+
+```{r include=FALSE}
+korelacje_pkp_sui <- pkb_rok_krnajw %>%
+  group_by(country) %>%
+  summarize(korelacja = cor(suicides, gdp, method = "pearson"))
+
+
+fig_korel <- plot_ly(korelacje_pkp_sui, x = ~country, y = ~korelacja, type = 'bar', color = ~country,
+        marker = list(color = ~country,
+                      line = list(color = 'rgb(8,48,107)',
+                                  width = 1.5)))
+fig_korel <- fig_korel %>% layout(title = "Korelacja liczby samójstw i PKB percap",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+```
+
+```{r message=FALSE, warning=FALSE}
+
+fig_korel
+```
+# Korelacje
+Chcemy sprawdzić jakie zmienne mają największy wpływ na liczbę samobójstw
+## wybór zmiennych zależnych 
+```{r message=FALSE, warning=FALSE, include=FALSE}
+zakoduj_plec <-function(sex_name){
+  return(as.numeric(sex_name=="male"))
+}
+
+do_modelu <- dane2 %>%
+  filter(year>2008) %>%
+  select(country.year,suicides.100k.pop,gdp_per_capita....,sex) %>%
+  group_by(country.year) %>%
+  summarise(suicides=mean(suicides.100k.pop), plec = mean(zakoduj_plec(sex)), pkb = mean(gdp_per_capita....)) %>%
+  ungroup()
+
+```
+### pkb
+```{r message=FALSE, warning=FALSE, include=FALSE}
+kor_model <- do_modelu %>%
+  mutate(country = substr(country.year,1,nchar(country.year)-4)) %>%
+  group_by(country) %>%
+  summarize(kor = cor(suicides,pkb)) %>%
+  ungroup()
+
+fig_kor <- plot_ly(kor_model, x = ~country, y = ~kor, type = 'bar', color = ~country)
+fig_kor <- fig_kor %>% layout(title = "Korelacja liczby samójstw i PKB percap",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+```
+
+``` {r}
+fig_kor
+```
+
+Jak widać zalezność globalna jeśli jest to bardzo słaba, ale dla pojedynczych krajów jest silniejsza
+```{r message=FALSE, warning=FALSE}
+
+
+y <- do_modelu$suicides
+X <- do_modelu$pkb
+
+lm_model <- linear_reg() %>% 
+  set_engine('lm') %>% 
+  set_mode('regression') %>%
+  fit(suicides ~ pkb, data = do_modelu) 
+
+x_range <- seq(min(X), max(X), length.out = 100)
+x_range <- matrix(x_range, nrow=100, ncol=1)
+xdf <- data.frame(x_range)
+colnames(xdf) <- c('pkb')
+ydf <- lm_model %>% predict(xdf) 
+
+colnames(ydf) <- c('suicides')
+xy <- data.frame(xdf, ydf) 
+
+fig <- plot_ly(do_modelu, x = ~pkb, y = ~suicides, type = 'scatter', alpha = 0.65, mode = 'markers', name = 'wsp_samobojstw')
+fig <- fig %>% add_trace(data = xy, x = ~pkb, y = ~suicides, name = 'Regression Fit', mode = 'lines', alpha = 1)
+
+fig
+
+
+
+```
+Ograniczymy się do krajów Europy 
+```{r include=FALSE}
+
+
+do_modelu2 <- dane2 %>%
+  filter(continent =="Europe") %>%
+  filter(year>2010, HDI.for.year != "NA") %>%
+  select(country,suicides = suicides.100k.pop,pkb = gdp_per_capita....,sex, hdi = HDI.for.year) %>%
+  ungroup()
+
+```
+Przeanalizujemy która zmienna : płeć, wskaźnik HDI, pkb percap ma największy wpływ na współczynnik samobójstw
+```{r message=FALSE, warning=FALSE}
+kor_model_eu <- do_modelu2 %>%
+  group_by(country) %>%
+  summarise(kor_pkb = cor(suicides, pkb),kor_hdi = cor(suicides, hdi), kor_sex =cor(suicides,zakoduj_plec(sex)))
+str(kor_model_eu)
+fig_koreu <- plot_ly(kor_model_eu, x = ~country, y = ~kor_pkb, type = 'bar', color = ~country)
+fig_koreu <- fig_koreu %>% layout(title = "Korelacja liczby samójstw i PKB percap",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig_koreu
+
+
+fig_koreu1 <- plot_ly(kor_model_eu, x = ~country, y = ~kor_hdi, type = 'bar', color = ~country)
+fig_koreu1 <- fig_koreu1 %>% layout(title = "Korelacja liczby samójstw i HDI",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig_koreu1
+
+fig_koreu2 <- plot_ly(kor_model_eu, x = ~country, y = ~kor_sex, type = 'bar', color = ~country)
+fig_koreu2 <- fig_koreu2 %>% layout(title = "Korelacja liczby samójstw i płci",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig_koreu2
+
+```
+# **Podsumowanie i wnioski** 
+Globalnie rośnie liczba samobójstw, szczególny nagły wzrost odnotowaliśmy pod koniec lat 80'. 
+Kontynentem z najwyższym współczynnikem jest Europa
+Jak widać największy wływ na wskaźnik samobójstw ma płeć,  w krajach przudujących w statystykach samobójstw istnieje dość spora korelacja między pkb a liczbą samobójstw.Efekt ten nie jest widoczny jednak w skali globalnej. 
+
+```{r}
+
+```
+
