@@ -12,7 +12,7 @@ output:
 ```{r setup, include=FALSE, message=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 ```
-# Wprowadzenie 
+
 Praca ma charakter eksploracyjny, ma za zadanie prześledzić tendencje i przyczyny samobójstw
 Na początku przeprowadzona zostanie globalna analiza samobóstw, jak zmieniała się ta liczba w latach 1985-2016. Kolejno jak sytuacja wygląda na kontynentach czy poszczególnych krajach. Następnie zaobserwowany zostanie związek płci z samójstwami, a także wieku i odpowiedź na pytanie: które pokolenie najczęsciej popełnia samobójstwo. Pod koniec przeanalizujemy także korelacje miedzy wskaźnikami takimi jak HDI i PKB a współczynnikiem samobójstw.
 ```{r pakiety, message=FALSE, warning=FALSE, include=FALSE}
@@ -39,7 +39,7 @@ datatable( sample_dane)
 
 # Ogólne tendencje
 
-## samobójstwa a rok
+## Samobójstwa a rok
 Zobaczmy jak zmieniała się całkowita liczba samobójstw w latach 1985-2016
 
 ```{r global, echo=FALSE, message=FALSE, warning=FALSE}
@@ -56,7 +56,7 @@ ggplot(timewise,
 
 Zauważmy **gwałtowny wzrost** liczby samobójstw pod koniec lat 80'
 
-## kontynenty
+## Kontynenty
 Spójrzmy jak wygląda wsp_samobójstw na poszczególnych kontynentach 
 ```{r kontynenty, echo=FALSE, message=FALSE, warning=FALSE}
 timewise2 <- dane2 %>%
@@ -70,7 +70,7 @@ ggplot(data = timewise2,
 ```
 Jak widać zdecydowanie od lat 90' przoduje **Europa** natomiast najniższy współczynnik samobójstw obserwujemy w Afryce
 
-## samobójstwa na 100 tyś osób w 2010 
+## Samobójstwa na 100 tyś osób w 2010 
 Przyjrzymy się liczbie samobójstw w poszczególnych krajach w roku 2010 
 ```{r message=FALSE, warning=FALSE, include=FALSE}
 map.world <- map_data("world")
@@ -100,7 +100,7 @@ mapa1 <- ggplot(data = map.world, aes(x=long, y = lat, group = group)) +
 mapa1
 ```
 
-## kraje z najwyższym współczynnikiem w 2010 roku 
+## Kraje z najwyższym współczynnikiem w 2010 roku 
 ```{r}
 najwięcej_s_2010<- dane_mapa %>%
   mutate(suicides = round(suicides, digits = 2)) %>%
@@ -150,7 +150,7 @@ fig
 ```
 Mężczyżn samobójców było 3 razy tyle ile kobiet 
 
-## wiek 
+## Wiek 
 ```{r wykr wiek, include=FALSE}
 dane_wiek <- dane2 %>%
   select (year,age,suicides.100k.pop) %>%
@@ -183,7 +183,7 @@ fig_wiek <- fig_wiek %>% layout(title = 'Udział we wskaźniku samobójstw ze wz
 fig_wiek
 ```
 
-## pokolenie
+## Pokolenie
 Które z pokoleń ma największe skłonności samobójcze
 ```{r include=FALSE}
 generacje_dane<- dane2 %>% 
@@ -324,7 +324,7 @@ fig_korel
 ```
 # Korelacje
 Chcemy sprawdzić jakie zmienne mają największy wpływ na liczbę samobójstw
-## wybór zmiennych zależnych 
+## Wybór zmiennych zależnych 
 ```{r message=FALSE, warning=FALSE, include=FALSE}
 zakoduj_plec <-function(sex_name){
   return(as.numeric(sex_name=="male"))
@@ -356,7 +356,7 @@ fig_kor <- fig_kor %>% layout(title = "Korelacja liczby samójstw i PKB percap",
 fig_kor
 ```
 
-Jak widać zalezność globalna jeśli jest to bardzo słaba, ale dla pojedynczych krajów jest silniejsza
+Jak widać zalezność globalna jeśli jest, to bardzo słaba, ale dla pojedynczych krajów jest silniejsza
 ```{r message=FALSE, warning=FALSE}
 
 
@@ -425,7 +425,9 @@ fig_koreu2
 # **Podsumowanie i wnioski** 
 Globalnie rośnie liczba samobójstw, szczególny nagły wzrost odnotowaliśmy pod koniec lat 80'. 
 Kontynentem z najwyższym współczynnikem jest Europa
-Jak widać największy wływ na wskaźnik samobójstw ma płeć,  w krajach przudujących w statystykach samobójstw istnieje dość spora korelacja między pkb a liczbą samobójstw.Efekt ten nie jest widoczny jednak w skali globalnej. 
+Jak widać największy wływ na wskaźnik samobójstw ma płeć,  w krajach przudujących w statystykach samobójstw istnieje dość spora korelacja między pkb a liczbą samobójstw. Efekt ten nie jest widoczny jednak w skali globalnej. Co należałoby sprawdzić czy może jest jakiś czynnik, który silniej determinuje liczbę samobójst niż PKB i HDI. To co jest dość widoczne, to wysoki współczynnnik samobójst w krajach Europy wschodniej szczególnie w byłych republikach ZSRR.
+
+\end(itemize)
 
 ```{r}
 
